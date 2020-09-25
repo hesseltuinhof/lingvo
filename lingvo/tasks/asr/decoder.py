@@ -617,6 +617,10 @@ class AsrDecoderBase(base_decoder.BaseBeamSearchDecoder):
     target_weights_sum = tf.reduce_sum(target_weights)
     # add 0.000001 to avoid divide-by-zero.
     target_weights_sum_eps = target_weights_sum + 0.000001
+    # apply Qin patch (see: https://github.com/yaq007/lingvo/commit/414e035b2c60372de732c9d67db14d1003be6dd6)
+    # line 1,2
+    target_weights_batch = tf.reduce_sum(target_weights, 1)
+    target_weights_batch_eps = target_weights_batch + 0.000001
     correct_preds = tf.cast(
         tf.equal(tf.argmax(logits, 2, output_type=tf.int32), target_labels),
         py_utils.FPropDtype(p))
@@ -633,6 +637,9 @@ class AsrDecoderBase(base_decoder.BaseBeamSearchDecoder):
         gamma=p.focal_loss_gamma)
 
     per_sequence_loss = tf.reduce_sum(per_example_loss * target_weights, 1)
+    # apply Qin patch (see: https://github.com/yaq007/lingvo/commit/414e035b2c60372de732c9d67db14d1003be6dd6)
+    # line 3
+    per_example_batch = per_sequence_loss/target_weights_batch_eps
     per_token_avg_loss = (
         tf.reduce_sum(per_sequence_loss) / target_weights_sum_eps)
     if p.token_normalized_per_seq_loss:
@@ -645,6 +652,9 @@ class AsrDecoderBase(base_decoder.BaseBeamSearchDecoder):
     else:  # per-sequence average loss
       loss = tf.reduce_mean(per_sequence_loss)
       loss_weight = tf.shape(per_sequence_loss)[0]
+    # apply Qin patch (see: https://github.com/yaq007/lingvo/commit/414e035b2c60372de732c9d67db14d1003be6dd6)
+    # line 4
+    tf.add_to_collection('per_loss', per_example_batch)
     metrics = {
         'loss': (loss, loss_weight),
         # add log_pplx for compatibility with the mt/decoder.py
